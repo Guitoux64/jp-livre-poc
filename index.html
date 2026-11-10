@@ -43,15 +43,22 @@
       2: "https://www.google.com/search?q=v%C3%A9lo"            // photo du velo
     };
 
-    document.querySelectorAll("[mindar-image-target]").forEach((el) => {
-      const index = el.getAttribute("mindar-image-target").targetIndex;
+    document.querySelectorAll("[mindar-image-target]").forEach((el, index) => {
+      // "index" = position de l'entite dans la page (0, 1, 2), qui correspond
+      // exactement au targetIndex puisque les 3 entites sont declarees dans cet ordre.
+      let dejaDeclenche = false; // evite de relancer la redirection a chaque micro-tremblement
 
       el.addEventListener("targetFound", () => {
         const lien = liens[index];
         const bandeau = document.getElementById("bandeau");
         bandeau.style.display = "block";
-        bandeau.textContent = "Photo reconnue (cible " + index + ") -> ouverture du lien dans 1s...";
-        setTimeout(() => { window.location.href = lien; }, 1000);
+        bandeau.innerHTML = "Photo reconnue (cible " + index + ") -> " +
+          "<a href=\"" + lien + "\" style=\"color:#9cf;text-decoration:underline;\">ouvrir le lien</a>";
+
+        if (!dejaDeclenche) {
+          dejaDeclenche = true;
+          setTimeout(() => { window.location.href = lien; }, 500);
+        }
       });
 
       el.addEventListener("targetLost", () => {
