@@ -24,44 +24,62 @@
 <body>
   <div id="bandeau"></div>
 
-  <!-- Ecran affiche tant que le code du livre n'a pas ete valide -->
+  <!-- Ecran affiche tant qu'aucun livre n'a ete identifie -->
   <div id="porte">
     Scannez le QR code sur la couverture du livre pour activer la reconnaissance des photos.
   </div>
 
-  <!-- Le contenu (camera + reconnaissance) n'est injecte dans la page qu'une fois le code valide -->
+  <!-- Le contenu (camera + reconnaissance) n'est injecte dans la page qu'une fois le livre identifie -->
   <div id="contenu"></div>
 
   <script>
-    // Code propre a ce livre : doit correspondre au QR colle sur la couverture.
-    // A changer facilement ici si besoin (un code different par livre produit).
-    const CODE_ATTENDU = "LIVRE-A7K9";
-    const CLE_STOCKAGE = "jp-livre-poc-deverrouille";
+    // Registre des livres connus : chaque code de couverture pointe vers SA PROPRE
+    // petite banque de photos (targets.mind) et SES liens. Ca evite de charger une
+    // banque commune a tous les livres (plus lent, et risque de confusion entre
+    // les photos de deux livres differents).
+    const LIVRES = {
+      "LIVRE-A7K9": {
+        mind: "livres/LIVRE-A7K9/targets.mind",
+        liens: {
+          0: "https://www.youtube.com/results?search_query=gonfleur+de+pneu",   // photo du gonfleur
+          1: "https://www.youtube.com/results?search_query=tuyau+d%27arrosage", // photo de la vanne/tuyau
+          2: "https://www.youtube.com/results?search_query=v%C3%A9lo"          // photo du velo
+        }
+      }
+      // Livre suivant : ajouter une entree ici, ex.
+      // "LIVRE-B3F2": { mind: "livres/LIVRE-B3F2/targets.mind", liens: { 0: "...", ... } }
+    };
+
+    const CLE_STOCKAGE = "jp-livre-poc-code";
 
     const params = new URLSearchParams(window.location.search);
     const codeFourni = params.get("code");
 
-    if (codeFourni === CODE_ATTENDU) {
-      try { localStorage.setItem(CLE_STOCKAGE, "1"); } catch (e) {}
+    let codeActif = null;
+    if (codeFourni && LIVRES[codeFourni]) {
+      codeActif = codeFourni;
+      try { localStorage.setItem(CLE_STOCKAGE, codeActif); } catch (e) {}
+    } else {
+      try {
+        const memorise = localStorage.getItem(CLE_STOCKAGE);
+        if (memorise && LIVRES[memorise]) codeActif = memorise;
+      } catch (e) {}
     }
 
-    let deverrouille = false;
-    try { deverrouille = localStorage.getItem(CLE_STOCKAGE) === "1"; } catch (e) {}
-    if (codeFourni === CODE_ATTENDU) deverrouille = true;
-
-    if (deverrouille) {
-      demarrerReconnaissance();
+    if (codeActif) {
+      demarrerReconnaissance(LIVRES[codeActif]);
     }
     // sinon : on ne touche a rien, la camera n'est jamais sollicitee,
     // l'ecran "porte" reste affiche.
 
-    function demarrerReconnaissance() {
+    function demarrerReconnaissance(livre) {
       document.getElementById("porte").style.display = "none";
 
       // La scene A-Frame / MindAR n'est inseree dans la page qu'ici,
-      // pour ne jamais declencher la demande d'acces camera avant ce point.
+      // pour ne jamais declencher la demande d'acces camera avant ce point,
+      // et pour pointer vers la banque de photos propre a CE livre.
       document.getElementById("contenu").innerHTML = `
-        <a-scene mindar-image="imageTargetSrc: ./targets.mind;"
+        <a-scene mindar-image="imageTargetSrc: ${livre.mind};"
                  color-space="sRGB"
                  renderer="colorManagement: true, physicallyCorrectLights"
                  vr-mode-ui="enabled: false"
@@ -74,13 +92,6 @@
         </a-scene>
       `;
 
-      // Association "photo reconnue" -> "lien web" (liens de demonstration pour le test)
-      const liens = {
-        0: "https://www.youtube.com/results?search_query=gonfleur+de+pneu",   // photo du gonfleur
-        1: "https://www.youtube.com/results?search_query=tuyau+d%27arrosage", // photo de la vanne/tuyau
-        2: "https://www.youtube.com/results?search_query=v%C3%A9lo"          // photo du velo
-      };
-
       // mindar-image a besoin d'un court instant pour enregistrer son composant
       // sur les entites nouvellement inserees avant qu'on y attache les ecouteurs.
       setTimeout(() => {
@@ -88,7 +99,7 @@
           let dejaDeclenche = false; // evite de relancer la redirection a chaque micro-tremblement
 
           el.addEventListener("targetFound", () => {
-            const lien = liens[index];
+            const lien = livre.liens[index];
             const bandeau = document.getElementById("bandeau");
             bandeau.style.display = "block";
             bandeau.innerHTML = "Photo reconnue (cible " + index + ") -> " +
