@@ -45,6 +45,12 @@
           1: "https://www.youtube.com/watch?v=U-XnMmOxTzc",   // photo du merou
           2: "https://www.youtube.com/shorts/xB7hY4mDLVc",    // photo du corb (groupe)
           3: "https://www.youtube.com/shorts/iJwDgrZUs8w"     // photo du sar tambour (raye)
+        },
+        // DEMO AR : pour ces index, au lieu de rediriger vers un lien, une video
+        // s'affiche directement ancree sur la photo (realite augmentee en place).
+        // Clip ici = un placeholder genere, le temps de valider le mecanisme.
+        videosAR: {
+          1: "demo-ar/merou-demo.mp4" // photo du merou
         }
       }
       // Livre suivant : ajouter une entree ici, ex.
@@ -76,6 +82,26 @@
     function demarrerReconnaissance(livre) {
       document.getElementById("porte").style.display = "none";
 
+      const videosAR = livre.videosAR || {};
+
+      // Un <video> par cible qui a une demo AR, regroupes dans <a-assets>
+      // pour que A-Frame les precharge avant de les utiliser comme texture.
+      const assetsHtml = Object.entries(videosAR).map(([index, src]) =>
+        `<video id="video-ar-${index}" src="${src}" loop playsinline webkit-playsinline muted crossorigin="anonymous"></video>`
+      ).join("\n");
+
+      // Pour chaque cible : si elle a une video AR, on lui ajoute un <a-video>
+      // enfant (ancre sur la photo, bouge avec elle). Sinon, cible vide comme avant
+      // (comportement "lien" classique gere plus bas).
+      const cibles = [0, 1, 2, 3].map(index => {
+        if (videosAR[index]) {
+          return `<a-entity mindar-image-target="targetIndex: ${index}">
+                     <a-video src="#video-ar-${index}" width="1" height="0.5625" position="0 0 0"></a-video>
+                   </a-entity>`;
+        }
+        return `<a-entity mindar-image-target="targetIndex: ${index}"></a-entity>`;
+      }).join("\n");
+
       // La scene A-Frame / MindAR n'est inseree dans la page qu'ici,
       // pour ne jamais declencher la demande d'acces camera avant ce point,
       // et pour pointer vers la banque de photos propre a CE livre.
@@ -85,12 +111,9 @@
                  renderer="colorManagement: true, physicallyCorrectLights"
                  vr-mode-ui="enabled: false"
                  device-orientation-permission-ui="enabled: false">
+          <a-assets>${assetsHtml}</a-assets>
           <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-
-          <a-entity mindar-image-target="targetIndex: 0"></a-entity>
-          <a-entity mindar-image-target="targetIndex: 1"></a-entity>
-          <a-entity mindar-image-target="targetIndex: 2"></a-entity>
-          <a-entity mindar-image-target="targetIndex: 3"></a-entity>
+          ${cibles}
         </a-scene>
       `;
 
@@ -101,8 +124,18 @@
           let dejaDeclenche = false; // evite de relancer la redirection a chaque micro-tremblement
 
           el.addEventListener("targetFound", () => {
-            const lien = livre.liens[index];
             const bandeau = document.getElementById("bandeau");
+
+            if (videosAR[index]) {
+              // DEMO AR : la video s'affiche ancree sur la photo, pas de redirection.
+              bandeau.style.display = "block";
+              bandeau.innerHTML = "Photo reconnue (cible " + index + ") : video AR en cours";
+              const video = document.getElementById("video-ar-" + index);
+              if (video) { video.currentTime = 0; video.play().catch(() => {}); }
+              return;
+            }
+
+            const lien = livre.liens[index];
             bandeau.style.display = "block";
             bandeau.innerHTML = "Photo reconnue (cible " + index + ") -> " +
               "<a href=\"" + lien + "\" style=\"color:#9cf;text-decoration:underline;\">ouvrir le lien</a>";
@@ -115,6 +148,10 @@
 
           el.addEventListener("targetLost", () => {
             document.getElementById("bandeau").style.display = "none";
+            if (videosAR[index]) {
+              const video = document.getElementById("video-ar-" + index);
+              if (video) video.pause();
+            }
           });
         });
       }, 0);
