@@ -7,7 +7,17 @@
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
   <style>
-    body { margin: 0; font-family: sans-serif; }
+    html, body { margin: 0; height: 100%; width: 100%; overflow: hidden; font-family: sans-serif; }
+    #contenu { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; }
+    /* Force la camera (video) et le rendu AR (canvas) injectes par MindAR a couvrir
+       tout l'ecran : evite un affichage coupe/partiel si le style par defaut de la
+       librairie ne s'applique pas correctement. */
+    #contenu video, #contenu canvas {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100vw !important; height: 100vh !important;
+      object-fit: cover !important;
+    }
     #bandeau {
       position: fixed; top: 0; left: 0; right: 0;
       background: rgba(0,0,0,0.75); color: white; padding: 12px;
@@ -155,6 +165,20 @@
           });
         });
       }, 0);
+
+      // Petit diagnostic discret (coin bas-gauche) : si l'affichage reste coupe,
+      // ca donne la taille reelle de la camera vs celle de l'ecran, sans avoir
+      // besoin d'acceder a la console du telephone.
+      setTimeout(() => {
+        const camVideo = Array.from(document.querySelectorAll("video"))
+          .find(v => !v.id.startsWith("video-ar-"));
+        const debug = document.createElement("div");
+        debug.style.cssText = "position:fixed;bottom:0;left:0;background:rgba(0,0,0,0.6);" +
+          "color:#9f9;font-size:10px;padding:4px;z-index:1000;";
+        debug.textContent = "ecran " + window.innerWidth + "x" + window.innerHeight +
+          " | camera " + (camVideo ? camVideo.videoWidth + "x" + camVideo.videoHeight : "introuvable");
+        document.body.appendChild(debug);
+      }, 2000);
     }
   </script>
 </body>
