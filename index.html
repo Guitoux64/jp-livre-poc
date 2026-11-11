@@ -63,17 +63,19 @@
         // puis bascule automatique en plein ecran stable pour le confort de lecture
         // sur la duree. "ar" et "pleinEcran" pointent vers le meme fichier : la
         // bascule reprend juste apres le point ou s'arrete la phase AR (pas de saut).
-        // clipDebutAR : on ne part pas du debut du fichier, on demarre direct sur le
-        // passage ou le merou arrive de face (fond degage, ~58s dans cette video) ;
-        // delaiZoomAvantBascule : un petit effet "zoom + flash" declenche juste avant
-        // la bascule, pour accentuer l'approche du poisson au moment de la coupe.
+        // clipDebutAR : on saute le tout debut (le merou de profil, pas utile ici) et
+        // on demarre a 3s, ou il est deja engage dans son approche vers la camera.
+        // dureeAR : va jusqu'a 8,5s, sur un plan net, de face, bouche ouverte.
+        // delaiZoomAvantBascule : 1s avant la bascule, le zoom (sur toute cette duree,
+        // pas juste un instant) accentue l'approche, puis flash+vibration pile au
+        // moment de la coupe vers le plein ecran.
         videosHybride: {
           1: {
             ar: "demo-sans-ar/merou-plein-ecran.mp4",
             pleinEcran: "demo-sans-ar/merou-plein-ecran.mp4",
-            clipDebutAR: 58,
-            dureeAR: 2.5,
-            delaiZoomAvantBascule: 0.3
+            clipDebutAR: 3,
+            dureeAR: 5.5,
+            delaiZoomAvantBascule: 1
           }
         },
         // TEST SANS AR : meme principe de declenchement par reconnaissance, mais la
@@ -182,20 +184,26 @@
         }
       }
 
-      // Petit "coup de zoom" + flash + vibration juste avant la bascule, pour
-      // accentuer l'approche du poisson au moment ou la video change de mode.
-      function declencherZoomBurst(index) {
+      // Coup de zoom etale sur (quasiment) toute la fenetre avant la bascule : pas
+      // un instant furtif, mais une croissance visible pendant delaiZoomAvantBascule,
+      // pour bien se voir avant la coupe. Grossissement marque (x2.4) expres, pour
+      // que l'effet ne passe pas inapercu.
+      function declencherZoomBurst(index, cfg) {
         const avideo = document.getElementById("avideo-" + index);
         if (avideo) {
+          const dureeMs = Math.max(200, (cfg.delaiZoomAvantBascule || 1) * 1000 - 100);
           avideo.setAttribute("animation__zoom",
-            "property: scale; from: 1 1 1; to: 1.6 1.6 1.6; dur: 300; easing: easeInQuad");
+            "property: scale; from: 1 1 1; to: 2.4 2.4 2.4; dur: " + dureeMs + "; easing: easeInQuad");
         }
-        flashDiv.style.opacity = "0.85";
-        setTimeout(() => { flashDiv.style.opacity = "0"; }, 60);
-        if (navigator.vibrate) navigator.vibrate(60);
       }
 
       function basculerVersPleinEcran(index, cfg) {
+        // Flash + vibration pile au moment de la coupe (pas avant) : c'est ce qui
+        // accentue la bascule elle-meme, le zoom s'est deja charge de l'approche.
+        flashDiv.style.opacity = "0.85";
+        setTimeout(() => { flashDiv.style.opacity = "0"; }, 60);
+        if (navigator.vibrate) navigator.vibrate(60);
+
         const videoAR = document.getElementById("video-ar-" + index);
         if (videoAR) videoAR.pause();
         const videoPlein = document.getElementById("video-plein-" + index);
@@ -284,7 +292,7 @@
               if (!etat.demarre) {
                 etat.demarre = true;
                 const delaiZoom = Math.max(0, (cfg.dureeAR - (cfg.delaiZoomAvantBascule || 0)) * 1000);
-                etat.timerZoom = setTimeout(() => declencherZoomBurst(index), delaiZoom);
+                etat.timerZoom = setTimeout(() => declencherZoomBurst(index, cfg), delaiZoom);
                 etat.timer = setTimeout(() => basculerVersPleinEcran(index, cfg), cfg.dureeAR * 1000);
               }
               return;
