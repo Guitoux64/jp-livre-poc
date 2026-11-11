@@ -58,9 +58,17 @@
         },
         // DEMO AR : pour ces index, au lieu de rediriger vers un lien, une video
         // s'affiche directement ancree sur la photo (realite augmentee en place).
-        // Clip ici = un placeholder genere, le temps de valider le mecanisme.
+        // Ici : vraie video du merou (plus le placeholder genere).
         videosAR: {
-          1: "demo-ar/merou-demo.mp4" // photo du merou
+          1: "demo-ar/merou.mp4" // photo du merou
+        },
+        // TEST SANS AR : meme principe de declenchement par reconnaissance, mais la
+        // video s'affiche juste en plein ecran (pas ancree/suivie sur la photo).
+        // Sert a comparer le rendu "plein ecran" vs "ancre en AR" cote a cote.
+        // Note : on reutilise ici une 2e vidéo du merou sur la cible du corb (index 2),
+        // uniquement pour ce test de rendu, pas pour la bonne association finale.
+        videosPlein: {
+          2: "demo-sans-ar/merou-plein-ecran.mp4" // test de rendu, cible = photo du corb
         }
       }
       // Livre suivant : ajouter une entree ici, ex.
@@ -93,12 +101,28 @@
       document.getElementById("porte").style.display = "none";
 
       const videosAR = livre.videosAR || {};
+      const videosPlein = livre.videosPlein || {};
 
       // Un <video> par cible qui a une demo AR, regroupes dans <a-assets>
       // pour que A-Frame les precharge avant de les utiliser comme texture.
       const assetsHtml = Object.entries(videosAR).map(([index, src]) =>
         `<video id="video-ar-${index}" src="${src}" loop playsinline webkit-playsinline muted crossorigin="anonymous"></video>`
       ).join("\n");
+
+      // Les videos "plein ecran sans AR" ne passent pas par A-Frame/a-assets :
+      // ce sont de simples balises <video> fixes par-dessus tout le reste,
+      // creees une seule fois ici, cachees par defaut.
+      Object.entries(videosPlein).forEach(([index, src]) => {
+        const video = document.createElement("video");
+        video.id = "video-plein-" + index;
+        video.src = src;
+        video.loop = true;
+        video.playsInline = true;
+        video.muted = true;
+        video.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;" +
+          "object-fit:cover;z-index:998;display:none;background:black;";
+        document.body.appendChild(video);
+      });
 
       // Pour chaque cible : si elle a une video AR, on lui ajoute un <a-video>
       // enfant (ancre sur la photo, bouge avec elle). Sinon, cible vide comme avant
@@ -145,6 +169,19 @@
               return;
             }
 
+            if (videosPlein[index]) {
+              // TEST SANS AR : la video prend tout l'ecran, sans ancrage/suivi.
+              bandeau.style.display = "block";
+              bandeau.innerHTML = "Photo reconnue (cible " + index + ") : video plein ecran (sans AR)";
+              const video = document.getElementById("video-plein-" + index);
+              if (video) {
+                video.style.display = "block";
+                video.currentTime = 0;
+                video.play().catch(() => {});
+              }
+              return;
+            }
+
             const lien = livre.liens[index];
             bandeau.style.display = "block";
             bandeau.innerHTML = "Photo reconnue (cible " + index + ") -> " +
@@ -162,6 +199,10 @@
               const video = document.getElementById("video-ar-" + index);
               if (video) video.pause();
             }
+            if (videosPlein[index]) {
+              const video = document.getElementById("video-plein-" + index);
+              if (video) { video.pause(); video.style.display = "none"; }
+            }
           });
         });
       }, 0);
@@ -171,7 +212,7 @@
       // besoin d'acceder a la console du telephone.
       setTimeout(() => {
         const camVideo = Array.from(document.querySelectorAll("video"))
-          .find(v => !v.id.startsWith("video-ar-"));
+          .find(v => !v.id.startsWith("video-ar-") && !v.id.startsWith("video-plein-"));
         const debug = document.createElement("div");
         debug.style.cssText = "position:fixed;bottom:0;left:0;background:rgba(0,0,0,0.6);" +
           "color:#9f9;font-size:10px;padding:4px;z-index:1000;";
