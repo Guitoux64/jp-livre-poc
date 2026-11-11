@@ -143,11 +143,25 @@
         const video = document.createElement("video");
         video.id = "video-plein-" + index;
         video.src = src;
-        video.loop = true;
         video.playsInline = true;
         video.muted = true;
         video.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;" +
           "object-fit:cover;z-index:998;display:none;background:black;";
+
+        if (videosHybride[index]) {
+          // Ne reboucle pas sur le tout debut du fichier (plan de profil du merou,
+          // hors-sujet ici) : une fois la fin du fichier atteinte, on revient juste
+          // apres la phase AR plutot qu'au tout debut.
+          video.loop = false;
+          const pointBoucle = (videosHybride[index].clipDebutAR || 0) + videosHybride[index].dureeAR;
+          video.addEventListener("ended", () => {
+            video.currentTime = pointBoucle;
+            video.play().catch(() => {});
+          });
+        } else {
+          video.loop = true;
+        }
+
         document.body.appendChild(video);
       });
 
@@ -156,7 +170,7 @@
       // suivi de la photo, il faut donc un moyen manuel de revenir au scan.
       let videoPleinActif = null;
       const boutonFermer = document.createElement("button");
-      boutonFermer.textContent = "✕ Fermer";
+      boutonFermer.textContent = "🔄 Nouveau scan";
       boutonFermer.style.cssText = "position:fixed;top:12px;right:12px;z-index:1001;" +
         "background:rgba(0,0,0,0.6);color:white;border:1px solid white;border-radius:20px;" +
         "padding:8px 14px;font-size:14px;display:none;";
