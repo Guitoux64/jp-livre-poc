@@ -63,11 +63,17 @@
         // puis bascule automatique en plein ecran stable pour le confort de lecture
         // sur la duree. "ar" et "pleinEcran" pointent vers le meme fichier : la
         // bascule reprend juste apres le point ou s'arrete la phase AR (pas de saut).
+        // clipDebutAR : on ne part pas du debut du fichier, on demarre direct sur le
+        // passage ou le merou arrive de face (fond degage, ~58s dans cette video) ;
+        // delaiZoomAvantBascule : un petit effet "zoom + flash" declenche juste avant
+        // la bascule, pour accentuer l'approche du poisson au moment de la coupe.
         videosHybride: {
           1: {
-            ar: "demo-ar/merou.mp4",
-            pleinEcran: "demo-ar/merou.mp4",
-            dureeAR: 2.5 // secondes de phase AR avant bascule en plein ecran
+            ar: "demo-sans-ar/merou-plein-ecran.mp4",
+            pleinEcran: "demo-sans-ar/merou-plein-ecran.mp4",
+            clipDebutAR: 58,
+            dureeAR: 2.5,
+            delaiZoomAvantBascule: 0.3
           }
         },
         // TEST SANS AR : meme principe de declenchement par reconnaissance, mais la
@@ -154,12 +160,40 @@
         "padding:8px 14px;font-size:14px;display:none;";
       document.body.appendChild(boutonFermer);
 
-      // Etat par cible hybride : a-t-on deja declenche la phase AR (minuteur en
+      // Flash plein ecran (blanc, tres bref) utilise pour accentuer la bascule
+      // AR -> plein ecran au moment choisi, en plus du zoom sur la video ancree.
+      const flashDiv = document.createElement("div");
+      flashDiv.style.cssText = "position:fixed;inset:0;background:white;opacity:0;" +
+        "pointer-events:none;z-index:1002;transition:opacity 0.2s ease-out;";
+      document.body.appendChild(flashDiv);
+
+      // Etat par cible hybride : a-t-on deja declenche la phase AR (minuteurs en
       // cours) et est-on deja passe en plein ecran (donc indifferent au suivi).
       const etatsHybrides = {};
       Object.keys(videosHybride).forEach(index => {
-        etatsHybrides[index] = { demarre: false, enPleinEcran: false, timer: null };
+        etatsHybrides[index] = { demarre: false, enPleinEcran: false, timer: null, timerZoom: null };
       });
+
+      function reinitialiserEffetZoom(index) {
+        const avideo = document.getElementById("avideo-" + index);
+        if (avideo) {
+          avideo.removeAttribute("animation__zoom");
+          avideo.setAttribute("scale", "1 1 1");
+        }
+      }
+
+      // Petit "coup de zoom" + flash + vibration juste avant la bascule, pour
+      // accentuer l'approche du poisson au moment ou la video change de mode.
+      function declencherZoomBurst(index) {
+        const avideo = document.getElementById("avideo-" + index);
+        if (avideo) {
+          avideo.setAttribute("animation__zoom",
+            "property: scale; from: 1 1 1; to: 1.6 1.6 1.6; dur: 300; easing: easeInQuad");
+        }
+        flashDiv.style.opacity = "0.85";
+        setTimeout(() => { flashDiv.style.opacity = "0"; }, 60);
+        if (navigator.vibrate) navigator.vibrate(60);
+      }
 
       function basculerVersPleinEcran(index, cfg) {
         const videoAR = document.getElementById("video-ar-" + index);
@@ -167,7 +201,8 @@
         const videoPlein = document.getElementById("video-plein-" + index);
         if (videoPlein) {
           videoPlein.style.display = "block";
-          videoPlein.currentTime = cfg.dureeAR; // reprend juste apres la phase AR, pas de saut
+          // Reprend juste apres la phase AR (debut du clip + sa duree), pas de saut.
+          videoPlein.currentTime = (cfg.clipDebutAR || 0) + cfg.dureeAR;
           videoPlein.play().catch(() => {});
           videoPleinActif = videoPlein;
         }
@@ -183,10 +218,13 @@
         document.getElementById("bandeau").style.display = "none";
         // Reinitialise les cycles hybrides : un nouveau scan de la photo repartira
         // de zero (phase AR courte, puis bascule) plutot que de rester bloque.
-        Object.values(etatsHybrides).forEach(etat => {
+        Object.keys(etatsHybrides).forEach(index => {
+          const etat = etatsHybrides[index];
           etat.demarre = false;
           etat.enPleinEcran = false;
           clearTimeout(etat.timer);
+          clearTimeout(etat.timerZoom);
+          reinitialiserEffetZoom(index);
         });
       });
 
@@ -197,7 +235,7 @@
       const cibles = [0, 1, 2, 3].map(index => {
         if (sourcesAR[index]) {
           return `<a-entity mindar-image-target="targetIndex: ${index}">
-                     <a-video src="#video-ar-${index}" width="1" height="0.5625" position="0 0 0"></a-video>
+                     <a-video id="avideo-${index}" src="#video-ar-${index}" width="1" height="0.5625" position="0 0 0"></a-video>
                    </a-entity>`;
         }
         return `<a-entity mindar-image-target="targetIndex: ${index}"></a-entity>`;
@@ -241,10 +279,12 @@
               bandeau.style.display = "block";
               bandeau.innerHTML = "Photo reconnue (cible " + index + ") : apercu AR...";
               const videoAR = document.getElementById("video-ar-" + index);
-              if (videoAR) { videoAR.currentTime = 0; videoAR.play().catch(() => {}); }
+              if (videoAR) { videoAR.currentTime = cfg.clipDebutAR || 0; videoAR.play().catch(() => {}); }
 
               if (!etat.demarre) {
                 etat.demarre = true;
+                const delaiZoom = Math.max(0, (cfg.dureeAR - (cfg.delaiZoomAvantBascule || 0)) * 1000);
+                etat.timerZoom = setTimeout(() => declencherZoomBurst(index), delaiZoom);
                 etat.timer = setTimeout(() => basculerVersPleinEcran(index, cfg), cfg.dureeAR * 1000);
               }
               return;
@@ -297,7 +337,9 @@
               // repartira de zero (nouvelle revelation complete) au prochain scan.
               document.getElementById("bandeau").style.display = "none";
               clearTimeout(etat.timer);
+              clearTimeout(etat.timerZoom);
               etat.demarre = false;
+              reinitialiserEffetZoom(index);
               const videoAR = document.getElementById("video-ar-" + index);
               if (videoAR) videoAR.pause();
               return;
