@@ -140,7 +140,7 @@
       // pour ne jamais declencher la demande d'acces camera avant ce point,
       // et pour pointer vers la banque de photos propre a CE livre.
       document.getElementById("contenu").innerHTML = `
-        <a-scene mindar-image="imageTargetSrc: ${livre.mind};"
+        <a-scene mindar-image="imageTargetSrc: ${livre.mind}; filterMinCF: 0.001; filterBeta: 10;"
                  color-space="sRGB"
                  renderer="colorManagement: true, physicallyCorrectLights"
                  vr-mode-ui="enabled: false"
