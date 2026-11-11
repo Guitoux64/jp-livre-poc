@@ -56,15 +56,23 @@
           2: "https://www.youtube.com/shorts/xB7hY4mDLVc",    // photo du corb (groupe)
           3: "https://www.youtube.com/shorts/iJwDgrZUs8w"     // photo du sar tambour (raye)
         },
-        // DEMO AR : pour ces index, au lieu de rediriger vers un lien, une video
-        // s'affiche directement ancree sur la photo (realite augmentee en place).
-        // Ici : vraie video du merou (plus le placeholder genere).
-        videosAR: {
-          1: "demo-ar/merou.mp4" // photo du merou
+        // DEMO AR permanente (ancree tout le long) : pour l'instant aucune cible
+        // n'utilise ce mode, on garde juste le mecanisme disponible.
+        videosAR: {},
+        // HYBRIDE (solution 1) : courte revelation ancree sur la photo (effet AR),
+        // puis bascule automatique en plein ecran stable pour le confort de lecture
+        // sur la duree. "ar" et "pleinEcran" pointent vers le meme fichier : la
+        // bascule reprend juste apres le point ou s'arrete la phase AR (pas de saut).
+        videosHybride: {
+          1: {
+            ar: "demo-ar/merou.mp4",
+            pleinEcran: "demo-ar/merou.mp4",
+            dureeAR: 2.5 // secondes de phase AR avant bascule en plein ecran
+          }
         },
         // TEST SANS AR : meme principe de declenchement par reconnaissance, mais la
-        // video s'affiche juste en plein ecran (pas ancree/suivie sur la photo).
-        // Sert a comparer le rendu "plein ecran" vs "ancre en AR" cote a cote.
+        // video s'affiche en plein ecran directement, sans phase AR avant.
+        // Sert a comparer le rendu cote a cote.
         // Note : on reutilise ici une 2e vidéo du merou sur la cible du corb (index 2),
         // uniquement pour ce test de rendu, pas pour la bonne association finale.
         videosPlein: {
@@ -102,17 +110,28 @@
 
       const videosAR = livre.videosAR || {};
       const videosPlein = livre.videosPlein || {};
+      const videosHybride = livre.videosHybride || {};
 
-      // Un <video> par cible qui a une demo AR, regroupes dans <a-assets>
-      // pour que A-Frame les precharge avant de les utiliser comme texture.
-      const assetsHtml = Object.entries(videosAR).map(([index, src]) =>
+      // Sources ancrees en AR : videos AR classiques + phase AR des hybrides.
+      const sourcesAR = {};
+      Object.entries(videosAR).forEach(([index, src]) => { sourcesAR[index] = src; });
+      Object.entries(videosHybride).forEach(([index, cfg]) => { sourcesAR[index] = cfg.ar; });
+
+      // Sources plein ecran : videos "sans AR" classiques + phase finale des hybrides.
+      const sourcesPlein = {};
+      Object.entries(videosPlein).forEach(([index, src]) => { sourcesPlein[index] = src; });
+      Object.entries(videosHybride).forEach(([index, cfg]) => { sourcesPlein[index] = cfg.pleinEcran; });
+
+      // Un <video> par cible ancree, regroupes dans <a-assets> pour que A-Frame
+      // les precharge avant de les utiliser comme texture.
+      const assetsHtml = Object.entries(sourcesAR).map(([index, src]) =>
         `<video id="video-ar-${index}" src="${src}" loop playsinline webkit-playsinline muted crossorigin="anonymous"></video>`
       ).join("\n");
 
-      // Les videos "plein ecran sans AR" ne passent pas par A-Frame/a-assets :
-      // ce sont de simples balises <video> fixes par-dessus tout le reste,
-      // creees une seule fois ici, cachees par defaut.
-      Object.entries(videosPlein).forEach(([index, src]) => {
+      // Les videos plein ecran (test sans AR + phase finale des hybrides) ne passent
+      // pas par A-Frame/a-assets : ce sont de simples balises <video> fixes par-dessus
+      // tout le reste, creees une seule fois ici, cachees par defaut.
+      Object.entries(sourcesPlein).forEach(([index, src]) => {
         const video = document.createElement("video");
         video.id = "video-plein-" + index;
         video.src = src;
@@ -124,11 +143,59 @@
         document.body.appendChild(video);
       });
 
-      // Pour chaque cible : si elle a une video AR, on lui ajoute un <a-video>
-      // enfant (ancre sur la photo, bouge avec elle). Sinon, cible vide comme avant
-      // (comportement "lien" classique gere plus bas).
+      // Bouton de fermeture commun a toutes les lectures plein ecran (test sans AR
+      // et phase finale des hybrides) : une fois la, la video n'est plus liee au
+      // suivi de la photo, il faut donc un moyen manuel de revenir au scan.
+      let videoPleinActif = null;
+      const boutonFermer = document.createElement("button");
+      boutonFermer.textContent = "✕ Fermer";
+      boutonFermer.style.cssText = "position:fixed;top:12px;right:12px;z-index:1001;" +
+        "background:rgba(0,0,0,0.6);color:white;border:1px solid white;border-radius:20px;" +
+        "padding:8px 14px;font-size:14px;display:none;";
+      document.body.appendChild(boutonFermer);
+
+      // Etat par cible hybride : a-t-on deja declenche la phase AR (minuteur en
+      // cours) et est-on deja passe en plein ecran (donc indifferent au suivi).
+      const etatsHybrides = {};
+      Object.keys(videosHybride).forEach(index => {
+        etatsHybrides[index] = { demarre: false, enPleinEcran: false, timer: null };
+      });
+
+      function basculerVersPleinEcran(index, cfg) {
+        const videoAR = document.getElementById("video-ar-" + index);
+        if (videoAR) videoAR.pause();
+        const videoPlein = document.getElementById("video-plein-" + index);
+        if (videoPlein) {
+          videoPlein.style.display = "block";
+          videoPlein.currentTime = cfg.dureeAR; // reprend juste apres la phase AR, pas de saut
+          videoPlein.play().catch(() => {});
+          videoPleinActif = videoPlein;
+        }
+        boutonFermer.style.display = "block";
+        etatsHybrides[index].enPleinEcran = true;
+        document.getElementById("bandeau").innerHTML = "Lecture en cours (plein ecran)";
+      }
+
+      boutonFermer.addEventListener("click", () => {
+        if (videoPleinActif) { videoPleinActif.pause(); videoPleinActif.style.display = "none"; }
+        videoPleinActif = null;
+        boutonFermer.style.display = "none";
+        document.getElementById("bandeau").style.display = "none";
+        // Reinitialise les cycles hybrides : un nouveau scan de la photo repartira
+        // de zero (phase AR courte, puis bascule) plutot que de rester bloque.
+        Object.values(etatsHybrides).forEach(etat => {
+          etat.demarre = false;
+          etat.enPleinEcran = false;
+          clearTimeout(etat.timer);
+        });
+      });
+
+      // Pour chaque cible : si elle a une video ancree (AR classique ou phase AR
+      // d'un hybride), on lui ajoute un <a-video> enfant (ancre sur la photo,
+      // bouge avec elle). Sinon, cible vide comme avant (comportement "lien"
+      // classique gere plus bas).
       const cibles = [0, 1, 2, 3].map(index => {
-        if (videosAR[index]) {
+        if (sourcesAR[index]) {
           return `<a-entity mindar-image-target="targetIndex: ${index}">
                      <a-video src="#video-ar-${index}" width="1" height="0.5625" position="0 0 0"></a-video>
                    </a-entity>`;
@@ -160,6 +227,29 @@
           el.addEventListener("targetFound", () => {
             const bandeau = document.getElementById("bandeau");
 
+            if (videosHybride[index]) {
+              const cfg = videosHybride[index];
+              const etat = etatsHybrides[index];
+
+              if (etat.enPleinEcran) {
+                // Deja bascule en plein ecran independant : on ignore un nouveau
+                // "found" (peut arriver si la photo repasse brievement dans le
+                // champ de la camera), la lecture plein ecran continue sans broncher.
+                return;
+              }
+
+              bandeau.style.display = "block";
+              bandeau.innerHTML = "Photo reconnue (cible " + index + ") : apercu AR...";
+              const videoAR = document.getElementById("video-ar-" + index);
+              if (videoAR) { videoAR.currentTime = 0; videoAR.play().catch(() => {}); }
+
+              if (!etat.demarre) {
+                etat.demarre = true;
+                etat.timer = setTimeout(() => basculerVersPleinEcran(index, cfg), cfg.dureeAR * 1000);
+              }
+              return;
+            }
+
             if (videosAR[index]) {
               // DEMO AR : la video s'affiche ancree sur la photo, pas de redirection.
               bandeau.style.display = "block";
@@ -178,6 +268,8 @@
                 video.style.display = "block";
                 video.currentTime = 0;
                 video.play().catch(() => {});
+                videoPleinActif = video;
+                boutonFermer.style.display = "block";
               }
               return;
             }
@@ -194,6 +286,23 @@
           });
 
           el.addEventListener("targetLost", () => {
+            if (videosHybride[index]) {
+              const etat = etatsHybrides[index];
+              if (etat.enPleinEcran) {
+                // Deja independant de la photo : la perte de suivi ne doit rien
+                // interrompre, c'est tout le but de la bascule.
+                return;
+              }
+              // Phase AR interrompue avant la bascule : on annule le cycle, il
+              // repartira de zero (nouvelle revelation complete) au prochain scan.
+              document.getElementById("bandeau").style.display = "none";
+              clearTimeout(etat.timer);
+              etat.demarre = false;
+              const videoAR = document.getElementById("video-ar-" + index);
+              if (videoAR) videoAR.pause();
+              return;
+            }
+
             document.getElementById("bandeau").style.display = "none";
             if (videosAR[index]) {
               const video = document.getElementById("video-ar-" + index);
@@ -202,6 +311,8 @@
             if (videosPlein[index]) {
               const video = document.getElementById("video-plein-" + index);
               if (video) { video.pause(); video.style.display = "none"; }
+              videoPleinActif = null;
+              boutonFermer.style.display = "none";
             }
           });
         });
